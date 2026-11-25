@@ -74,6 +74,62 @@ window.widgetWindows = {
     openWindows: {},
     _posCache: {},
     _maximizedCache: {},
+    POSITION_STORAGE_KEY: "mbWidgetPositions",
+    /**
+     * Loads saved widget window positions from localStorage.
+     *
+     * @returns {Object.<string, [number, number]>}
+     */
+    _loadPosCache() {
+        try {
+            if (
+                typeof window.localStorage === "undefined" ||
+                !window.localStorage ||
+                typeof window.localStorage.getItem !== "function"
+            ) {
+                return {};
+            }
+            const raw = window.localStorage.getItem(this.POSITION_STORAGE_KEY);
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+            const cache = {};
+            for (const [key, pos] of Object.entries(parsed)) {
+                if (
+                    Array.isArray(pos) &&
+                    pos.length === 2 &&
+                    typeof pos[0] === "number" &&
+                    Number.isFinite(pos[0]) &&
+                    typeof pos[1] === "number" &&
+                    Number.isFinite(pos[1])
+                ) {
+                    cache[key] = [pos[0], pos[1]];
+                }
+            }
+            return cache;
+        } catch {
+            return {};
+        }
+    },
+    /**
+     * Persists widget window positions to localStorage.
+     *
+     * @returns {void}
+     */
+    _savePosCache() {
+        try {
+            if (
+                typeof window.localStorage === "undefined" ||
+                !window.localStorage ||
+                typeof window.localStorage.setItem !== "function"
+            ) {
+                return;
+            }
+            window.localStorage.setItem(this.POSITION_STORAGE_KEY, JSON.stringify(this._posCache));
+        } catch {
+            // Ignore storage quota or security restrictions.
+        }
+    },
     focused: null,
     draggingWindow: null,
     _globalListenersInitialized: false,
@@ -430,6 +486,8 @@ window.widgetWindows = {
     }
 };
 
+window.widgetWindows._posCache = window.widgetWindows._loadPosCache();
+
 class WidgetWindow {
     /**
      * @param {string} key
@@ -469,16 +527,17 @@ class WidgetWindow {
             const x = Number(_pos[0]);
             const y = Number(_pos[1]);
             if (
-                !Number.isNaN(x) &&
-                !Number.isNaN(y) &&
+                Number.isFinite(x) &&
+                Number.isFinite(y) &&
                 !window.widgetWindows._maximizedCache[this._key]
             ) {
                 const clamped = this._clampToViewport(x, y);
                 this.setPosition(clamped[0], clamped[1]);
                 this._restorePending = true;
             } else {
-                if (Number.isNaN(x) || Number.isNaN(y)) {
+                if (!Number.isFinite(x) || !Number.isFinite(y)) {
                     delete window.widgetWindows._posCache[this._key];
+                    window.widgetWindows._savePosCache();
                 }
             }
         }
@@ -1230,6 +1289,7 @@ class WidgetWindow {
         this._frame.style.top = `${top}px`;
         window.widgetWindows._posCache[this._key] = [x, top];
         window.widgetWindows._maximizedCache[this._key] = false;
+        window.widgetWindows._savePosCache();
         return this;
     }
 

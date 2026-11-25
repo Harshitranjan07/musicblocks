@@ -2569,4 +2569,132 @@ describe("widgetWindows", () => {
             expect(window.widgetWindows.focused).toBe(win1);
         });
     });
+
+    describe("position persistence across page reloads", () => {
+        let origLocalStorage;
+        let origWidgetWindows;
+        let store;
+
+        beforeEach(() => {
+            origLocalStorage = window.localStorage;
+            origWidgetWindows = window.widgetWindows;
+            store = { languagePreference: "en" };
+            Object.defineProperty(window, "localStorage", {
+                writable: true,
+                value: {
+                    languagePreference: "en",
+                    getItem: jest.fn(k => (k in store ? store[k] : null)),
+                    setItem: jest.fn((k, v) => {
+                        store[k] = String(v);
+                    }),
+                    removeItem: jest.fn(k => {
+                        delete store[k];
+                    })
+                }
+            });
+        });
+
+        afterEach(() => {
+            Object.defineProperty(window, "localStorage", {
+                writable: true,
+                value: origLocalStorage
+            });
+            window.widgetWindows = origWidgetWindows;
+            floatingWindows.innerHTML = "";
+        });
+
+        test("saves position on move and restores it after simulated reload", () => {
+            const win = windowFor({ blockNo: undefined }, "Tempo", "tempo", true);
+            win.setPosition(310, 185);
+            win.destroy();
+
+            const savedRaw = store[window.widgetWindows.POSITION_STORAGE_KEY];
+            expect(savedRaw).toBeDefined();
+            expect(JSON.parse(savedRaw).tempo).toEqual([310, 185]);
+
+            // Simulate page reload by isolating and re-evaluating widgetWindows.js
+            jest.isolateModules(() => {
+                require("../widgetWindows.js");
+                const reloaded = window.widgetWindows.windowFor(
+                    { blockNo: undefined },
+                    "Tempo",
+                    "tempo",
+                    true
+                );
+                expect(reloaded._frame.style.left).toBe("310px");
+                expect(reloaded._frame.style.top).toBe("185px");
+                reloaded.destroy();
+            });
+        });
+
+        test("clamps persisted position to visible viewport after reload", () => {
+            store[window.widgetWindows.POSITION_STORAGE_KEY] = JSON.stringify({
+                arpeggio: [5000, 5000]
+            });
+
+            jest.isolateModules(() => {
+                require("../widgetWindows.js");
+                const win = window.widgetWindows.windowFor(
+                    { blockNo: undefined },
+                    "Arpeggio",
+                    "arpeggio",
+                    true
+                );
+                expect(win._frame.style.left).toBe(`${window.innerWidth - 470}px`);
+                expect(win._frame.style.top).toBe(`${window.innerHeight - 420}px`);
+                win.destroy();
+            });
+        });
+
+        test("preserves maximize/restore and keeps pre-maximize saved position across reload", () => {
+            const win = windowFor({ blockNo: undefined }, "Meter", "meter", true);
+            win.setPosition(145, 210);
+            win._maximize();
+            expect(win.isMaximized()).toBe(true);
+            expect(JSON.parse(store[window.widgetWindows.POSITION_STORAGE_KEY]).meter).toEqual([
+                145, 210
+            ]);
+
+            win._restore();
+            expect(win.isMaximized()).toBe(false);
+            expect(win._frame.style.left).toBe("145px");
+            expect(win._frame.style.top).toBe("210px");
+            win.destroy();
+
+            jest.isolateModules(() => {
+                require("../widgetWindows.js");
+                const reopened = window.widgetWindows.windowFor(
+                    { blockNo: undefined },
+                    "Meter",
+                    "meter",
+                    true
+                );
+                expect(reopened._frame.style.left).toBe("145px");
+                expect(reopened._frame.style.top).toBe("210px");
+                reopened.destroy();
+            });
+        });
+
+        test("handles corrupted localStorage JSON, invalid entries, and storage errors safely", () => {
+            store[window.widgetWindows.POSITION_STORAGE_KEY] = "{invalid-json";
+            expect(window.widgetWindows._loadPosCache()).toEqual({});
+
+            store[window.widgetWindows.POSITION_STORAGE_KEY] = JSON.stringify({
+                badNull: [null, 100],
+                badString: ["100", 100],
+                badArray: [100],
+                valid: [90, 120]
+            });
+            expect(window.widgetWindows._loadPosCache()).toEqual({ valid: [90, 120] });
+
+            window.localStorage.getItem = jest.fn(() => {
+                throw new Error("SecurityError");
+            });
+            window.localStorage.setItem = jest.fn(() => {
+                throw new Error("QuotaExceededError");
+            });
+            expect(window.widgetWindows._loadPosCache()).toEqual({});
+            expect(() => createTestWindow("Safe Window").setPosition(80, 120)).not.toThrow();
+        });
+    });
 });
