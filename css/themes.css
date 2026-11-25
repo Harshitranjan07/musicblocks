@@ -3,8 +3,6 @@
 #themedropdown {
     background-color: transparent;
     box-shadow: none;
-    display: flex;
-    transform: translateX(-25%) !important;
 }
 
 #themedropdown a {
@@ -31,10 +29,10 @@
     background-color: transparent !important;
 }
 
-/* High Contrast Mode Theme Dropdown - Override ALL styles */
+/* High Contrast Mode Theme Dropdown */
 .highcontrast #themedropdown {
     background-color: var(--color-text-inverse) !important;
-    border: 1px solid #ffffff !important;
+    border: 2px solid #ffffff !important;
 }
 
 .highcontrast #themedropdown li {
@@ -42,23 +40,31 @@
 }
 
 .highcontrast #themedropdown li a {
-    background-color: transparent !important;
+    background-color: var(--color-bg-primary) !important;
+    border: 1px solid var(--color-brand-secondary) !important;
+    color: var(--color-brand-secondary) !important;
+}
+
+.highcontrast #themedropdown li a .material-icons {
     color: var(--color-brand-secondary) !important;
 }
 
 .highcontrast #themedropdown li a:hover,
 .highcontrast #themedropdown a:hover,
-.highcontrast #themedropdown li:hover,
+.highcontrast #themedropdown li > a:focus-visible,
+.highcontrast #themedropdown li > a.dropdown-item-focused,
 .highcontrast #themedropdown.dropdown-content li > a:hover,
-.highcontrast.dropdown-content li > a:hover {
-    background-color: transparent !important;
-    color: var(--color-brand-secondary) !important;
+body.highcontrast #themedropdown.dropdown-content li > a:hover,
+body.highcontrast #themedropdown.dropdown-content li > a:focus-visible,
+body.highcontrast #themedropdown.dropdown-content li > a.dropdown-item-focused {
+    background-color: var(--color-brand-secondary) !important;
+    color: var(--color-text-inverse) !important;
 }
 
-/* Override Materialize CSS hover styles with maximum specificity */
-body.highcontrast #themedropdown.dropdown-content li > a:hover {
-    background-color: transparent !important;
-    color: var(--color-brand-secondary) !important;
+body.highcontrast #themedropdown.dropdown-content li > a:hover .material-icons,
+body.highcontrast #themedropdown.dropdown-content li > a:focus-visible .material-icons,
+body.highcontrast #themedropdown.dropdown-content li > a.dropdown-item-focused .material-icons {
+    color: var(--color-text-inverse) !important;
 }
 
 /* Dark Mode */
