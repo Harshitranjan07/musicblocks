@@ -1109,6 +1109,83 @@ describe("Logo doBreak", () => {
         expect(tur.parentFlowQueue).toEqual([0]);
         expect(tur.queue[0].blk).toBe(3);
     });
+
+    test("flushes scheduled child blocks inside repeat loop while keeping post-loop outflow (#7156)", () => {
+        // repeat (0) -> [prev: null, count: 1, body: 2, afterLoop: 6]
+        // if (2) -> [prev: 0, cond: 3, then: 4 (break), next: 5 (backward)]
+        logo.blockList = [
+            { name: "repeat", connections: [null, 1, 2, 6] },
+            { name: "number" },
+            { name: "if", connections: [0, 3, 4, 5] },
+            { name: "true" },
+            { name: "break", connections: [2] },
+            { name: "backward", connections: [2, null] },
+            { name: "print", connections: [0, null] }
+        ];
+        const tur = {
+            queue: [
+                { blk: 6, count: 1, parentBlk: 0 },
+                { blk: 2, count: 3, parentBlk: 0 },
+                { blk: 5, count: 1, parentBlk: 2 }
+            ],
+            parentFlowQueue: []
+        };
+
+        logo.doBreak(tur);
+
+        expect(tur.queue).toEqual([{ blk: 6, count: 1, parentBlk: 0 }]);
+    });
+
+    test("flushes scheduled child blocks on final repeat iteration without dropping post-loop outflow (#7156)", () => {
+        logo.blockList = [
+            { name: "repeat", connections: [null, 1, 2, 6] },
+            { name: "number" },
+            { name: "if", connections: [0, 3, 4, 5] },
+            { name: "true" },
+            { name: "break", connections: [2] },
+            { name: "backward", connections: [2, null] },
+            { name: "print", connections: [0, null] }
+        ];
+        const tur = {
+            queue: [
+                { blk: 6, count: 1, parentBlk: 0 },
+                { blk: 5, count: 1, parentBlk: 2 }
+            ],
+            parentFlowQueue: []
+        };
+
+        logo.doBreak(tur);
+
+        expect(tur.queue).toEqual([{ blk: 6, count: 1, parentBlk: 0 }]);
+    });
+
+    test("flushes scheduled child blocks inside while loop before queuing post-loop outflow (#7156)", () => {
+        logo.blockList = [
+            { name: "while", connections: [null, 1, 2, 6] },
+            { name: "true" },
+            { name: "if", connections: [0, 3, 4, 5] },
+            { name: "true" },
+            { name: "break", connections: [2] },
+            { name: "backward", connections: [2, null] },
+            { name: "print", connections: [0, null] }
+        ];
+        const signal = { type: "endClamp" };
+        logo.stage = { dispatchEvent: jest.fn() };
+        const tur = {
+            queue: [
+                { blk: 0, count: 1, parentBlk: null },
+                { blk: 5, count: 1, parentBlk: 2 }
+            ],
+            parentFlowQueue: [],
+            endOfClampSignals: { 5: [signal] }
+        };
+
+        logo.doBreak(tur);
+
+        expect(logo.stage.dispatchEvent).toHaveBeenCalledWith(signal);
+        expect(tur.queue).toHaveLength(1);
+        expect(tur.queue[0].blk).toBe(6);
+    });
 });
 
 // ─── Logo setDispatchBlock ────────────────────────────────────────────────────
