@@ -1581,9 +1581,9 @@ class Block {
                     label += attr;
                 }
             } else if (this.name === "drumname") {
-                label = getDrumName(this.value);
+                label = getDrumName(this.value) || _("?");
             } else if (this.name === "noisename") {
-                label = getNoiseName(this.value);
+                label = getNoiseName(this.value) || _("?");
             } else if (this.name === "outputtools") {
                 label = this.overrideName;
                 if (label === null || label === undefined) {
@@ -1603,7 +1603,7 @@ class Block {
                         }
                     }
                 } else {
-                    label = "???";
+                    label = _("?");
                 }
             } else if (this.name === "grid") {
                 label = _(this.value);
@@ -1611,7 +1611,7 @@ class Block {
                 if (this.value !== null) {
                     label = _(this.value.toString());
                 } else {
-                    label = "???";
+                    label = _("?");
                 }
             }
 
