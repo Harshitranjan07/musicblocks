@@ -27,7 +27,8 @@
    noteToFrequency, getTemperament,
    SEMITONES, normalizeNoteAccidentals, parseNoteString, getCurrentEDO,
    keySignatureToMode, getSavedCustomModes,
-   clampNumber, saveMeterState, restoreMeterState
+   clampNumber, saveMeterState, restoreMeterState,
+   durationToNoteValue, getDrumSymbol
  */
 
 /*
@@ -370,6 +371,9 @@ class Singer {
         this.tieNoteExtras = [];
         this.tieCarryOver = 0;
         this.tieFirstDrums = [];
+        this.tieFirstStaged = true;
+        this._tieFirstStagingIdx = -1;
+        this._tieFirstDrumStagingIdx = -1;
         this.drift = 0;
         // Maximum fraction of note duration that can be used for lag correction per note.
         // This prevents notes from being rushed when catching up to the master clock.
@@ -2193,12 +2197,15 @@ class Singer {
                         tur.singer.noteDrums[saveBlk] = tur.singer.tieNoteExtras[4];
                         tur.singer.embeddedGraphics[saveBlk] = tur.singer.tieNoteExtras[5];
 
-                        if (tur.singer.justCounting.length === 0) {
+                        if (tur.singer.justCounting.length === 0 && tur.singer.tieFirstStaged) {
                             // Remove the note from the Lilypond list
                             for (let i = 0; i < tur.singer.notePitches[saveBlk].length; i++) {
                                 activity.logo.notation.notationRemoveTie(turtle);
                             }
                         }
+                        tur.singer.tieFirstStaged = true;
+                        tur.singer._tieFirstStagingIdx = -1;
+                        tur.singer._tieFirstDrumStagingIdx = -1;
 
                         // Play previous note
                         tur.singer.tie = false;
@@ -2513,6 +2520,25 @@ class Singer {
                 }
 
                 // Process pitches
+                const hasPitchedNotes = tur.singer.notePitches[thisBlk].some(
+                    pitch => pitch !== "rest"
+                );
+                const hasCurrentDrums = tur.singer.noteDrums[thisBlk].length > 0;
+                const combinedTiedDrums =
+                    carry > 0
+                        ? Singer._combineTiedDrums(
+                              tur.singer.noteDrums[thisBlk],
+                              tur.singer.tieFirstDrums
+                          )
+                        : tur.singer.noteDrums[thisBlk];
+                const isDrumOnlyTieFirst =
+                    duration === 0 &&
+                    tur.singer.tieCarryOver > 0 &&
+                    !hasPitchedNotes &&
+                    hasCurrentDrums;
+                const isDrumOnlyTieComplete =
+                    duration > 0 && carry > 0 && !hasPitchedNotes && combinedTiedDrums.length > 0;
+
                 let noteObj, note;
                 if (tur.singer.notePitches[thisBlk].length > 0) {
                     for (let i = 0; i < tur.singer.notePitches[thisBlk].length; i++) {
@@ -2578,19 +2604,21 @@ class Singer {
                         }
 
                         if (duration > 0) {
-                            if (carry > 0) {
+                            if (carry > 0 && !isDrumOnlyTieComplete) {
                                 if (i === 0 && tur.singer.justCounting.length === 0) {
                                     activity.logo.notation.notationInsertTie(turtle);
                                 }
                             }
 
                             if (tur.singer.justCounting.length === 0) {
-                                if (tur.singer.noteDrums[thisBlk].length > 0) {
+                                if (hasCurrentDrums || isDrumOnlyTieComplete) {
                                     if (!chordNotes.includes(notationNote)) {
                                         chordNotes.push(notationNote);
                                     }
 
-                                    for (const drum of tur.singer.noteDrums[thisBlk]) {
+                                    const drumsForEntry =
+                                        carry > 0 && hasPitchedNotes ? [] : combinedTiedDrums;
+                                    for (const drum of drumsForEntry) {
                                         if (!chordDrums.includes(drum)) {
                                             chordDrums.push(drum);
                                         }
@@ -2608,7 +2636,7 @@ class Singer {
                                     }
                                 }
                             }
-                        } else if (tur.singer.tieCarryOver > 0) {
+                        } else if (tur.singer.tieCarryOver > 0 && !isDrumOnlyTieFirst) {
                             if (tur.singer.justCounting.length === 0) {
                                 if (courtesy[i]) {
                                     if (!chordNotes.includes(notationNote)) {
@@ -2625,7 +2653,7 @@ class Singer {
                         if (i === tur.singer.notePitches[thisBlk].length - 1) {
                             let d;
                             if (duration > 0) {
-                                if (carry > 0) {
+                                if (carry > 0 && !isDrumOnlyTieComplete) {
                                     if (Math.abs(duration - carry) < 1e-10) {
                                         d = 0;
                                     } else {
@@ -2634,7 +2662,7 @@ class Singer {
                                 } else {
                                     d = duration;
                                 }
-                            } else if (tur.singer.tieCarryOver > 0) {
+                            } else if (tur.singer.tieCarryOver > 0 && !isDrumOnlyTieFirst) {
                                 d = tur.singer.tieCarryOver;
                             }
 
@@ -2676,6 +2704,20 @@ class Singer {
                                     );
                                 }
                                 if (exporting || tur.singer.recordingNotation) {
+                                    if (duration === 0 && tur.singer.tieCarryOver > 0) {
+                                        tur.singer.tieFirstStaged = true;
+                                        tur.singer._tieFirstStagingIdx = Array.isArray(
+                                            activity.logo.notation.notationStaging?.[turtle]
+                                        )
+                                            ? activity.logo.notation.notationStaging[turtle].length
+                                            : -1;
+                                        tur.singer._tieFirstDrumStagingIdx = Array.isArray(
+                                            activity.logo.notation.notationDrumStaging?.[turtle]
+                                        )
+                                            ? activity.logo.notation.notationDrumStaging[turtle]
+                                                  .length
+                                            : -1;
+                                    }
                                     activity.logo.updateNotation(
                                         chordNotes,
                                         d,
@@ -2683,7 +2725,66 @@ class Singer {
                                         -1,
                                         chordDrums
                                     );
+                                    if (
+                                        carry > 0 &&
+                                        hasPitchedNotes &&
+                                        combinedTiedDrums.length > 0 &&
+                                        tur.singer._tieFirstStagingIdx >= 0
+                                    ) {
+                                        const staging =
+                                            activity.logo.notation.notationStaging?.[turtle];
+                                        const drumStaging =
+                                            activity.logo.notation.notationDrumStaging?.[turtle];
+                                        const notatedCombined = combinedTiedDrums.filter(
+                                            name => !["noise1", "noise2", "noise3"].includes(name)
+                                        );
+                                        if (
+                                            staging?.[tur.singer._tieFirstStagingIdx] &&
+                                            notatedCombined.length > 0
+                                        ) {
+                                            staging[tur.singer._tieFirstStagingIdx][7] =
+                                                notatedCombined;
+                                        }
+                                        if (
+                                            drumStaging &&
+                                            tur.singer._tieFirstDrumStagingIdx >= 0 &&
+                                            drumStaging[tur.singer._tieFirstDrumStagingIdx] &&
+                                            notatedCombined.length > 0 &&
+                                            typeof durationToNoteValue === "function" &&
+                                            typeof getDrumSymbol === "function"
+                                        ) {
+                                            const durObj = durationToNoteValue(duration);
+                                            drumStaging[tur.singer._tieFirstDrumStagingIdx] = [
+                                                [
+                                                    ...new Set(
+                                                        notatedCombined.map(name =>
+                                                            getDrumSymbol(name)
+                                                        )
+                                                    )
+                                                ],
+                                                durObj[0],
+                                                durObj[1],
+                                                durObj[2],
+                                                durObj[3],
+                                                -1,
+                                                false
+                                            ];
+                                            if (drumStaging.length > 1) {
+                                                drumStaging.pop();
+                                            }
+                                        }
+                                    }
+                                    if (carry > 0) {
+                                        tur.singer._tieFirstStagingIdx = -1;
+                                        tur.singer._tieFirstDrumStagingIdx = -1;
+                                    }
                                 }
+                            } else if (isDrumOnlyTieFirst) {
+                                // Drum-only tied notes combine onto a single hit of combined duration
+                                // once the second tied note completes; defer staging until then.
+                                tur.singer.tieFirstStaged = false;
+                                tur.singer._tieFirstStagingIdx = -1;
+                                tur.singer._tieFirstDrumStagingIdx = -1;
                             }
                         }
                     }
@@ -2941,15 +3042,15 @@ class Singer {
                 }
 
                 // Process drums
-                if (tur.singer.noteDrums[thisBlk].length > 0) {
-                    for (let i = 0; i < tur.singer.noteDrums[thisBlk].length; i++) {
-                        drums.push(tur.singer.noteDrums[thisBlk][i]);
-                    }
-
-                    for (let i = 0; i < tur.singer.tieFirstDrums.length; i++) {
-                        if (!drums.includes(tur.singer.tieFirstDrums[i])) {
-                            drums.push(tur.singer.tieFirstDrums[i]);
-                        }
+                if (
+                    tur.singer.noteDrums[thisBlk].length > 0 ||
+                    (tieDelay > 0 && tur.singer.tieFirstDrums.length > 0)
+                ) {
+                    for (const drum of Singer._combineTiedDrums(
+                        tur.singer.noteDrums[thisBlk],
+                        tur.singer.tieFirstDrums
+                    )) {
+                        drums.push(drum);
                     }
 
                     // If it is > 0, we already counted this note (e.g. pitch & drum combination)
@@ -3153,6 +3254,23 @@ class Singer {
      */
     static resolveNoteEffects(turtleState, instrumentSettings) {
         return resolveNoteEffects(turtleState, instrumentSettings);
+    }
+
+    /**
+     * Combines drums from a completed tied pair in playback order without duplicates.
+     *
+     * @param {string[]} secondDrums
+     * @param {string[]} firstDrums
+     * @returns {string[]}
+     */
+    static _combineTiedDrums(secondDrums = [], firstDrums = []) {
+        const combined = [...secondDrums];
+        for (const drum of firstDrums) {
+            if (!combined.includes(drum)) {
+                combined.push(drum);
+            }
+        }
+        return combined;
     }
 
     /**

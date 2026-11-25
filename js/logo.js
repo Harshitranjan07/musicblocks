@@ -1727,6 +1727,9 @@ class Logo {
                 turtle.singer.tieNotePitches = [];
                 turtle.singer.tieNoteExtras = [];
                 turtle.singer.tieFirstDrums = [];
+                turtle.singer.tieFirstStaged = true;
+                turtle.singer._tieFirstStagingIdx = -1;
+                turtle.singer._tieFirstDrumStagingIdx = -1;
             }
             turtle.endOfClampSignals = {};
             if (turtle.delayTimeout !== null) {

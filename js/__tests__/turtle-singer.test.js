@@ -5247,3 +5247,221 @@ describe("processNote neighbor effect when the neighbor note value was rejected"
         expect(effectsSentToSynth().doNeighbor).toBe(false);
     });
 });
+
+describe("processNote — drums inside a Tie block (#10242)", () => {
+    const Notation = require("../notation");
+    const saveMxmlOutput = require("../mxml");
+
+    const buildDrumNote = (singer, blk, drums, beatValue = 4) => {
+        singer.notePitches[blk] = ["rest"];
+        singer.noteOctaves[blk] = [4];
+        singer.noteCents[blk] = [0];
+        singer.noteHertz[blk] = [0];
+        singer.oscList[blk] = [];
+        singer.noteBeat[blk] = 1;
+        singer.noteBeatValues[blk] = beatValue;
+        singer.noteDrums[blk] = [...drums];
+        singer.embeddedGraphics[blk] = [];
+    };
+
+    const makeNotationEnv = () => {
+        const turtle = createTurtleMock();
+        turtle.name = "Turtle 0";
+        turtle.singer = new Singer(turtle);
+        turtle.doWait = jest.fn();
+        turtle.blink = jest.fn();
+
+        const activity = createActivityMock(turtle);
+        activity.blocks.blockList = [];
+        const notation = new Notation(activity);
+        notation.notationStaging = { 0: [] };
+        notation.notationDrumStaging = { 0: [] };
+
+        Object.assign(activity.logo, {
+            notation,
+            notationNotes: { 0: "" },
+            notationOutput: "",
+            runningLilypond: true,
+            runningMxml: false,
+            runningAbc: false,
+            runningMIDI: true,
+            specialArgs: [],
+            time: 0,
+            firstNoteAudioTime: null,
+            dispatchTurtleSignals: jest.fn(),
+            setDispatchBlock: jest.fn(),
+            setTurtleListener: jest.fn(),
+            notationMIDI: jest.fn(),
+            updateNotation: jest.fn((note, duration, t, insideChord, drum) => {
+                notation.doUpdateNotation(note, duration, t, insideChord, drum);
+            })
+        });
+        Object.assign(activity.logo.synth, {
+            start: jest.fn(),
+            inTemperament: "equal",
+            changeInTemperament: false,
+            startingPitch: "C4",
+            getFrequency: jest.fn(() => [261.63]),
+            getCustomFrequency: jest.fn(() => [261.63])
+        });
+        activity.stage = { update: jest.fn() };
+        return { turtle, activity, notation };
+    };
+
+    let savedNotationGlobals;
+
+    beforeEach(() => {
+        savedNotationGlobals = {
+            Singer: global.Singer,
+            durationToNoteValue: global.durationToNoteValue,
+            getDrumSymbol: global.getDrumSymbol,
+            notationToLily: global.notationToLily,
+            toFixed2: global.toFixed2,
+            DRUMNAMES: global.DRUMNAMES,
+            frequencyToPitch: global.frequencyToPitch,
+            getMidiDrum: global.getMidiDrum
+        };
+        const musicUtils = require("../utils/musicutils");
+        global.Singer = Singer;
+        global.durationToNoteValue = musicUtils.durationToNoteValue;
+        global.getDrumSymbol = musicUtils.getDrumSymbol;
+        global.DRUMNAMES = [
+            ["snare", "snare drum", 38, "sn"],
+            ["bass", "bass drum", 36, "bd"],
+            ["kick", "kick drum", 36, "bd"]
+        ];
+        global.frequencyToPitch = musicUtils.frequencyToPitch;
+        global.getMidiDrum = () => ({ "snare drum": 38, "bass drum": 36, "kick drum": 36 });
+        global.notationToLily = jest.fn(() => "");
+        global.toFixed2 = n => Number(n).toFixed(2);
+    });
+
+    afterEach(() => {
+        Object.assign(global, savedNotationGlobals);
+        jest.restoreAllMocks();
+    });
+
+    test("stages snare tied to bass drum as one combined half-note hit at beat 1 (not rest then beat 2)", () => {
+        const { turtle, activity, notation } = makeNotationEnv();
+        const singer = turtle.singer;
+        singer.suppressOutput = true;
+
+        setupRhythmActions(activity);
+        Singer.RhythmActions.doTie(0, 0);
+
+        buildDrumNote(singer, "n1", ["snare drum"], 4);
+        singer.inNoteBlock = ["n1"];
+        Singer.processNote(activity, 4, false, "n1", 0, jest.fn());
+        singer.inNoteBlock.pop();
+
+        // First tied drum note should defer notation until second tied note completes.
+        expect(notation.notationStaging[0]).toEqual([]);
+        expect(notation.notationDrumStaging[0]).toEqual([]);
+
+        buildDrumNote(singer, "n2", ["bass drum"], 4);
+        singer.inNoteBlock = ["n2"];
+        Singer.processNote(activity, 4, false, "n2", 0, jest.fn());
+        singer.inNoteBlock.pop();
+
+        // Untied kick drum after the tie.
+        singer.tie = false;
+        buildDrumNote(singer, "n3", ["kick drum"], 4);
+        singer.inNoteBlock = ["n3"];
+        Singer.processNote(activity, 4, false, "n3", 0, jest.fn());
+        singer.inNoteBlock.pop();
+
+        expect(notation.notationStaging[0]).toEqual([
+            [["R"], 2, 0, null, undefined, -1, false, ["bass drum", "snare drum"]],
+            [["R"], 4, 0, null, undefined, -1, false, ["kick drum"]]
+        ]);
+        expect(notation.notationDrumStaging[0]).toEqual([
+            [["bd", "sn"], 2, 0, null, undefined, -1, false],
+            [["bd"], 4, 0, null, undefined, -1, false]
+        ]);
+        expect(activity.logo.notationMIDI).toHaveBeenNthCalledWith(
+            1,
+            ["R"],
+            ["bass drum", "snare drum"],
+            2,
+            0,
+            expect.any(Number),
+            null,
+            [4, 4]
+        );
+        expect(activity.logo.notationMIDI).toHaveBeenNthCalledWith(
+            2,
+            ["R"],
+            ["kick drum"],
+            4,
+            0,
+            expect.any(Number),
+            null,
+            [4, 4]
+        );
+
+        // MusicXML percussion part writes a single combined half-note chord at beat 1.
+        const mxml = saveMxmlOutput({ notation });
+        const d1Part = mxml.slice(mxml.indexOf('<part id="D1"'));
+        expect(d1Part).not.toContain("<rest/>");
+        expect(d1Part).toContain("<type>half</type>");
+        expect(d1Part).toContain("<chord/>");
+        expect(mxml).toContain("<instrument-name>snare drum</instrument-name>");
+        expect(mxml).toContain("<instrument-name>bass drum</instrument-name>");
+    });
+
+    test("deduplicates identical tied drums into one hit of combined length (kick + kick -> bd2)", () => {
+        const { turtle, activity, notation } = makeNotationEnv();
+        const singer = turtle.singer;
+        singer.suppressOutput = true;
+
+        setupRhythmActions(activity);
+        Singer.RhythmActions.doTie(0, 0);
+
+        buildDrumNote(singer, "n1", ["kick drum"], 4);
+        singer.inNoteBlock = ["n1"];
+        Singer.processNote(activity, 4, false, "n1", 0, jest.fn());
+        singer.inNoteBlock.pop();
+
+        buildDrumNote(singer, "n2", ["kick drum"], 4);
+        singer.inNoteBlock = ["n2"];
+        Singer.processNote(activity, 4, false, "n2", 0, jest.fn());
+        singer.inNoteBlock.pop();
+
+        expect(notation.notationStaging[0]).toEqual([
+            [["R"], 2, 0, null, undefined, -1, false, ["kick drum"]]
+        ]);
+        expect(notation.notationDrumStaging[0]).toEqual([
+            [["bd"], 2, 0, null, undefined, -1, false]
+        ]);
+    });
+
+    test("preserves unpaired drum note on Tie clamp exit without dropping it", () => {
+        let tieExitListener;
+        const { turtle, activity, notation } = makeNotationEnv();
+        activity.logo.setTurtleListener = jest.fn((_, __, cb) => {
+            tieExitListener = cb;
+        });
+        const singer = turtle.singer;
+        singer.suppressOutput = true;
+
+        setupRhythmActions(activity);
+        Singer.RhythmActions.doTie(0, 0);
+
+        buildDrumNote(singer, "n1", ["snare drum"], 4);
+        singer.inNoteBlock = ["n1"];
+        Singer.processNote(activity, 4, false, "n1", 0, jest.fn());
+        singer.inNoteBlock.pop();
+
+        expect(notation.notationStaging[0]).toEqual([]);
+        expect(notation.notationDrumStaging[0]).toEqual([]);
+
+        tieExitListener();
+
+        expect(notation.notationStaging[0]).toEqual([
+            [["R"], 4, 0, null, undefined, -1, false, ["snare drum"]]
+        ]);
+        expect(notation.notationDrumStaging[0]).toEqual([
+            [["sn"], 4, 0, null, undefined, -1, false]
+        ]);
+    });
+});
