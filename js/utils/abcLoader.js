@@ -53,7 +53,20 @@ function loadABCJSViaScriptTag() {
             if (existing.hasAttribute("data-loaded")) {
                 resolve();
             } else {
-                existing.addEventListener("load", resolve);
+                const cleanup = () => {
+                    existing.removeEventListener("load", onLoad);
+                    existing.removeEventListener("error", onError);
+                };
+                const onLoad = () => {
+                    cleanup();
+                    resolve();
+                };
+                const onError = error => {
+                    cleanup();
+                    reject(error);
+                };
+                existing.addEventListener("load", onLoad);
+                existing.addEventListener("error", onError);
             }
             return;
         }
@@ -66,7 +79,10 @@ function loadABCJSViaScriptTag() {
             resolve();
         };
 
-        script.onerror = reject;
+        script.onerror = error => {
+            script.remove();
+            reject(error);
+        };
 
         document.head.appendChild(script);
     });
