@@ -1719,4 +1719,93 @@ describe("ModeWidget", () => {
             expect(modeWidget._modeWheel.navAngle).toBe(-90);
         });
     });
+
+    describe("synth temperament synchronization (#9627)", () => {
+        afterEach(() => {
+            delete global.Singer;
+        });
+
+        test("notifies synth temperamentChanged and clears pitch cache when switching tuning via dropdown", () => {
+            const teardown = (() => {
+                global.TEMPERAMENT["equal19"] = { isEDO: true, edo: 19, pitchNumber: 19 };
+                const origGetEDO = global.getCurrentEDO;
+                const origIsEqual = global.isEquallyTempered;
+                global.getCurrentEDO = k => (k === "equal19" ? 19 : 12);
+                global.isEquallyTempered = k => k === "equal" || k === "equal19";
+                return () => {
+                    delete global.TEMPERAMENT["equal19"];
+                    global.getCurrentEDO = origGetEDO;
+                    global.isEquallyTempered = origIsEqual;
+                    delete mockActivity.logo.synth.inTemperament;
+                    delete mockActivity.logo.synth.startingPitch;
+                    delete mockActivity.logo.synth.temperamentChanged;
+                };
+            })();
+
+            try {
+                const clearCache = jest.fn();
+                global.Singer = { clearPitchToFrequencyCache: clearCache };
+                mockActivity.logo.synth.inTemperament = "equal";
+                mockActivity.logo.synth.startingPitch = "C4";
+                mockActivity.logo.synth.temperamentChanged = jest.fn();
+
+                const widget = new ModeWidget(mockActivity);
+                const select = {
+                    value: "",
+                    options: [],
+                    addEventListener: jest.fn(),
+                    appendChild: jest.fn(o => select.options.push(o))
+                };
+                widget._edoSelect = select;
+                widget._wireEdoSelect(select);
+
+                select.value = "just intonation";
+                const handler = select.addEventListener.mock.calls.find(c => c[0] === "change")[1];
+                handler();
+
+                expect(mockActivity.logo.synth.inTemperament).toBe("just intonation");
+                expect(mockActivity.logo.synth.temperamentChanged).toHaveBeenCalledTimes(1);
+                expect(mockActivity.logo.synth.temperamentChanged).toHaveBeenCalledWith(
+                    "just intonation",
+                    "C4"
+                );
+                expect(clearCache).toHaveBeenCalledTimes(1);
+            } finally {
+                teardown();
+            }
+        });
+
+        test("notifies synth temperamentChanged when _applyImportedMode changes EDO tuning", () => {
+            mockActivity.logo.synth.inTemperament = "equal";
+            mockActivity.logo.synth.startingPitch = "D4";
+            mockActivity.logo.synth.temperamentChanged = jest.fn();
+
+            const savedEqual24 = global.TEMPERAMENT.equal24;
+            global.TEMPERAMENT.equal24 = { isEDO: true, edo: 24, pitchNumber: 24 };
+            try {
+                const widget = new ModeWidget(mockActivity);
+                widget._edoSelect = {
+                    options: [],
+                    appendChild: jest.fn(o => widget._edoSelect.options.push(o))
+                };
+                widget._applyImportedMode(24, Array(24).fill(1), "Imported 24");
+
+                expect(mockActivity.logo.synth.inTemperament).toBe("equal24");
+                expect(mockActivity.logo.synth.temperamentChanged).toHaveBeenCalledTimes(1);
+                expect(mockActivity.logo.synth.temperamentChanged).toHaveBeenCalledWith(
+                    "equal24",
+                    "D4"
+                );
+            } finally {
+                if (savedEqual24 === undefined) {
+                    delete global.TEMPERAMENT.equal24;
+                } else {
+                    global.TEMPERAMENT.equal24 = savedEqual24;
+                }
+                delete mockActivity.logo.synth.inTemperament;
+                delete mockActivity.logo.synth.startingPitch;
+                delete mockActivity.logo.synth.temperamentChanged;
+            }
+        });
+    });
 });

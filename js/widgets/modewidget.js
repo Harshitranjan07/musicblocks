@@ -21,7 +21,7 @@
     rotateSliceAngles,
     scalePatternToEDO, isNonEDO, getNonEDOModeSteps, getNonEDOFrequency, isEquallyTempered, piemenuModes,
     isUnsafeObjectKey, ManagedTimer, readTextFile, downloadTextFile, createSharePopup,
-    closeSharePopup, makeKeyboardAccessible
+    closeSharePopup, makeKeyboardAccessible, Singer
  */
 
 /*
@@ -435,8 +435,7 @@ class ModeWidget {
                 this._cacheState(oldEDO);
             }
 
-            this._activeTemperamentKey = key;
-            this.logo.synth.inTemperament = key;
+            this._applySynthTemperament(key);
 
             // _translateNotesToEDO() and _restoreState() must run while
             // this._activeEDO still holds the OLD EDO: _translateNotesToEDO
@@ -512,8 +511,7 @@ class ModeWidget {
             getCurrentEDO(this._activeTemperamentKey) === edoCount
                 ? this._activeTemperamentKey
                 : this._temperamentKeyForEDO(edoCount);
-        this._activeTemperamentKey = key;
-        this.logo.synth.inTemperament = key;
+        this._applySynthTemperament(key);
         this._activeEDO = edoCount;
         if (select) {
             const label = isEquallyTempered(key)
@@ -534,6 +532,33 @@ class ModeWidget {
         }
         this._rebuildModeIndex();
         this._piemenuMode();
+    }
+
+    /**
+     * Applies a temperament key to widget/synth state and notifies the synth
+     * when the active temperament changes so tuning frequency tables update.
+     *
+     * @param {string} key
+     * @private
+     */
+    _applySynthTemperament(key) {
+        const previousKey = this.logo?.synth?.inTemperament;
+        this._activeTemperamentKey = key;
+        if (!this.logo?.synth) {
+            return;
+        }
+        this.logo.synth.inTemperament = key;
+        if (previousKey !== key) {
+            if (typeof this.logo.synth.temperamentChanged === "function") {
+                this.logo.synth.temperamentChanged(key, this.logo.synth.startingPitch || "C4");
+            }
+            if (
+                typeof Singer !== "undefined" &&
+                typeof Singer.clearPitchToFrequencyCache === "function"
+            ) {
+                Singer.clearPitchToFrequencyCache();
+            }
+        }
     }
 
     /** True only for keys defined directly on TEMPERAMENT, not object built-ins. */
@@ -1684,8 +1709,7 @@ class ModeWidget {
     _applyImportedMode(foundEdo, foundPattern, name) {
         const key = this._temperamentKeyForEDO(foundEdo);
         this._cacheState(this._activeEDO);
-        this.logo.synth.inTemperament = key;
-        this._activeTemperamentKey = key;
+        this._applySynthTemperament(key);
         this._rebuildWheel(foundEdo);
         this._applyModePattern(foundPattern);
         this._selectedModeName = name;
