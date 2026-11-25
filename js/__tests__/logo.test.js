@@ -3363,6 +3363,55 @@ describe("Logo runFromBlockNow", () => {
             expect(logo.stopTurtle).toBe(true);
         });
 
+        test("tracks iteration budget per turtle so multi-turtle runs do not pool budgets (#8627)", () => {
+            const turtle0 = createMockTurtle({ name: "Melodic", running: true });
+            const turtle1 = createMockTurtle({ name: "Harmonic", running: true });
+            mockActivity.turtles.turtleList = [turtle0, turtle1];
+            mockActivity.turtles.getTurtleCount = () => 2;
+            mockActivity.turtles.getTurtle = i => mockActivity.turtles.turtleList[i];
+            mockActivity.turtles.ithTurtle = i => mockActivity.turtles.turtleList[i];
+            mockActivity.turtles.running = () => turtle0.running || turtle1.running;
+            logo = new Logo(mockActivity);
+            logo._MAX_ITERATIONS = 5;
+            logo._iterationBudget = 6;
+            logo._lastIterationBudgetSeed = 6;
+            const block0 = makeFlowBlock("noop");
+            const block1 = makeFlowBlock("noop");
+            logo.blockList = [block0, block1];
+
+            // 4 steps each (8 total > per-turtle limit 5): neither turtle exhausts its own budget.
+            for (let step = 0; step < 4; step++) {
+                logo.runFromBlockNow(logo, 0, 0, 0, null);
+                logo.runFromBlockNow(logo, 1, 1, 0, null);
+            }
+
+            expect(mockActivity.errorMsg).not.toHaveBeenCalled();
+            expect(logo.stopTurtle).toBe(false);
+            expect(block0.protoblock.flow).toHaveBeenCalledTimes(4);
+            expect(block1.protoblock.flow).toHaveBeenCalledTimes(4);
+
+            // Turtle 0 hits its budget on its 6th step while Turtle 1 still has work ->
+            // stops only Turtle 0, keeping Turtle 1 active.
+            turtle0.running = true;
+            turtle0.queue = [{ blk: 0, count: 1, parentBlk: null }];
+            turtle1.running = true;
+            logo.runFromBlockNow(logo, 0, 0, 0, null);
+            logo.runFromBlockNow(logo, 0, 0, 0, null);
+
+            expect(mockActivity.errorMsg).toHaveBeenCalledWith(
+                expect.stringContaining("Melodic"),
+                0
+            );
+            expect(turtle0.running).toBe(false);
+            expect(turtle0.queue).toEqual([]);
+            expect(turtle1.running).toBe(true);
+            expect(logo.stopTurtle).toBe(false);
+
+            // Turtle 1 continues executing normally after Turtle 0 was aborted.
+            logo.runFromBlockNow(logo, 1, 1, 0, null);
+            expect(block1.protoblock.flow).toHaveBeenCalledTimes(5);
+        });
+
         test("evalFlowDict plugin executes when block name matches", () => {
             const effects = [];
             logo.evalFlowDict = { widgetblock: () => effects.push("ran") };
