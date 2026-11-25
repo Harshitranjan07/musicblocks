@@ -615,6 +615,27 @@ describe("Viewport Culling", () => {
         expect(homeButton.querySelector('[data-home-indicator="right"]').hidden).toBe(true);
     });
 
+    it("should show boundary indicator when a top-level block is off-screen and hide when on-screen", () => {
+        mockActivity.setHomeContainers = jest.fn();
+        blocks.boundary = { show: jest.fn(), hide: jest.fn() };
+        const offScreenBlock = {
+            trash: false,
+            connections: [null],
+            offScreen: jest.fn().mockReturnValue(true)
+        };
+        blocks.blockList = [offScreenBlock];
+
+        blocks.checkBounds();
+        expect(blocks.boundary.show).toHaveBeenCalledTimes(1);
+        expect(blocks.boundary.hide).not.toHaveBeenCalled();
+        expect(mockActivity.setHomeContainers).toHaveBeenCalledWith(true);
+
+        offScreenBlock.offScreen.mockReturnValue(false);
+        blocks.checkBounds();
+        expect(blocks.boundary.hide).toHaveBeenCalledTimes(1);
+        expect(mockActivity.setHomeContainers).toHaveBeenCalledWith(false);
+    });
+
     it("should refresh a stale highlight cache when a block re-enters the viewport", () => {
         let cachedHighlightVisible = true;
         const block = {
