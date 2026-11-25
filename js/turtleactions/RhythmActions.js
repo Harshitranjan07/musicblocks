@@ -317,6 +317,7 @@ function setupRhythmActions(activity) {
             tur.singer.tieNoteExtras = [];
             tur.singer.tieCarryOver = 0;
             tur.singer.tieFirstDrums = [];
+            tur.singer.tieFirstStaged = true;
 
             const listenerName = "_tie_" + turtle;
             if (blk !== undefined && blk in activity.blocks.blockList) {
@@ -331,7 +332,8 @@ function setupRhythmActions(activity) {
 
                 // If tieCarryOver > 0, we have one more note to play
                 if (tur.singer.tieCarryOver > 0) {
-                    if (tur.singer.justCounting.length === 0) {
+                    const firstWasStaged = tur.singer.tieFirstStaged !== false;
+                    if (tur.singer.justCounting.length === 0 && firstWasStaged) {
                         const lastNote = last(tur.singer.inNoteBlock);
                         // eslint-disable-next-line eqeqeq
                         if (lastNote != null && lastNote in tur.singer.notePitches) {
@@ -413,8 +415,11 @@ function setupRhythmActions(activity) {
                     delete tur.singer.noteDrums[saveBlk];
                     delete tur.singer.embeddedGraphics[saveBlk];
 
-                    // Remove duplicate note
-                    activity.logo.notation.notationStaging[turtle].pop();
+                    if (firstWasStaged) {
+                        // Remove duplicate note
+                        activity.logo.notation.notationStaging[turtle].pop();
+                    }
+                    tur.singer.tieFirstStaged = true;
                 }
 
                 tur.singer.tieNotePitches = [];
