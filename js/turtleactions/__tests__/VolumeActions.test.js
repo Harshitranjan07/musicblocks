@@ -651,6 +651,60 @@ describe("setupVolumeActions", () => {
                 [0, 5]
             ]);
         });
+
+        test("doCrescendo listener removes itself and ignores duplicate dispatches without stack underflow", () => {
+            crescendo(10, 1);
+            const listener = targetTurtle.listeners._crescendo_0_1;
+            expect(stageListeners.has("_crescendo_0_1")).toBe(true);
+
+            dispatch("_crescendo_0_1");
+            expect(stageListeners.has("_crescendo_0_1")).toBe(false);
+            expect(targetTurtle.listeners).not.toHaveProperty("_crescendo_0_1");
+            expectVolumes({ default: [50] });
+            expect(targetTurtle.singer.crescendoDelta).toEqual([]);
+            expect(targetTurtle.singer.inCrescendo).toEqual([]);
+
+            // Re-dispatching or directly re-invoking the stale listener must be a no-op
+            dispatch("_crescendo_0_1");
+            listener();
+            expectVolumes({ default: [50] });
+            expect(crescendoEndSpy).toHaveBeenCalledTimes(1);
+        });
+
+        test("setRelativeVolume listener removes itself and ignores duplicate dispatches without stack underflow", () => {
+            relative(20, 1);
+            const listener = targetTurtle.listeners._articulation_0_1;
+            expect(stageListeners.has("_articulation_0_1")).toBe(true);
+
+            dispatch("_articulation_0_1");
+            expect(stageListeners.has("_articulation_0_1")).toBe(false);
+            expect(targetTurtle.listeners).not.toHaveProperty("_articulation_0_1");
+            expectVolumes({ default: [50] });
+
+            // Re-dispatching or directly re-invoking the stale listener must be a no-op
+            dispatch("_articulation_0_1");
+            listener();
+            expectVolumes({ default: [50] });
+            expect(endArticulationSpy).toHaveBeenCalledTimes(1);
+        });
+
+        test("falls back to activity.stage and preserves newer listener entries on stale callback", () => {
+            const stage = activity.logo.stage;
+            activity.stage = stage;
+
+            relative(20, 1);
+            const firstListener = targetTurtle.listeners._articulation_0_1;
+
+            // Simulate a newer registration under the same listenerName before firstListener fires
+            const replacement = jest.fn();
+            activity.logo.setTurtleListener(0, "_articulation_0_1", replacement);
+
+            // Drop activity.logo.stage to verify cleanup falls back to activity.stage
+            delete activity.logo.stage;
+            firstListener();
+            expect(targetTurtle.listeners._articulation_0_1).toBe(replacement);
+            expect(stageListeners.get("_articulation_0_1")).toBe(replacement);
+        });
     });
 
     // setMasterVolume tests

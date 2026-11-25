@@ -76,6 +76,44 @@ function setupVolumeActions(activity) {
         return null;
     };
 
+    /**
+     * Registers a single-use end-of-clamp listener that removes itself from
+     * the stage and turtle listener map on first invocation.
+     *
+     * @param {Object} tur - Turtle instance
+     * @param {Number} turtle - Turtle index in turtles.turtleList
+     * @param {Number} [blk] - corresponding Block index in blocks.blockList
+     * @param {String} listenerName - Stage event name for the clamp boundary
+     * @param {Function} onExit - Callback executed once when the clamp exits
+     * @returns {void}
+     */
+    const registerOneShotClampListener = (tur, turtle, blk, listenerName, onExit) => {
+        if (blk !== undefined && blk in activity.blocks.blockList) {
+            activity.logo.setDispatchBlock(blk, turtle, listenerName);
+        } else if (typeof MusicBlocks !== "undefined" && MusicBlocks.isRun) {
+            const mouse = Mouse.getMouseFromTurtle(tur);
+            if (mouse !== null) mouse.MB.listeners.push(listenerName);
+        }
+
+        let cleanedUp = false;
+        const __listener = () => {
+            if (cleanedUp) return;
+            cleanedUp = true;
+
+            const stage = (activity.logo && activity.logo.stage) || activity.stage;
+            if (stage && typeof stage.removeEventListener === "function") {
+                stage.removeEventListener(listenerName, __listener, false);
+            }
+            if (tur && tur.listeners && tur.listeners[listenerName] === __listener) {
+                delete tur.listeners[listenerName];
+            }
+
+            onExit();
+        };
+
+        activity.logo.setTurtleListener(turtle, listenerName, __listener);
+    };
+
     Singer.VolumeActions = class {
         /**
          * Increases/decreases the volume of the contained notes by a specified amount for every note played.
@@ -107,14 +145,7 @@ function setupVolumeActions(activity) {
             tur.singer.inCrescendo.push(true);
 
             const listenerName = "_crescendo_" + turtle + "_" + blk;
-            if (blk !== undefined && blk in activity.blocks.blockList) {
-                activity.logo.setDispatchBlock(blk, turtle, listenerName);
-            } else if (typeof MusicBlocks !== "undefined" && MusicBlocks.isRun) {
-                const mouse = Mouse.getMouseFromTurtle(tur);
-                if (mouse !== null) mouse.MB.listeners.push(listenerName);
-            }
-
-            const __listener = () => {
+            registerOneShotClampListener(tur, turtle, blk, listenerName, () => {
                 if (tur.singer.justCounting.length === 0) {
                     activity.logo.notation.notationEndCrescendo(
                         turtle,
@@ -139,9 +170,7 @@ function setupVolumeActions(activity) {
                     );
                 }
                 tur.singer.inCrescendo.pop();
-            };
-
-            activity.logo.setTurtleListener(turtle, listenerName, __listener);
+            });
         }
 
         /**
@@ -181,14 +210,7 @@ function setupVolumeActions(activity) {
             }
 
             const listenerName = "_articulation_" + turtle + "_" + blk;
-            if (blk !== undefined && blk in activity.blocks.blockList) {
-                activity.logo.setDispatchBlock(blk, turtle, listenerName);
-            } else if (typeof MusicBlocks !== "undefined" && MusicBlocks.isRun) {
-                const mouse = Mouse.getMouseFromTurtle(tur);
-                if (mouse !== null) mouse.MB.listeners.push(listenerName);
-            }
-
-            const __listener = () => {
+            registerOneShotClampListener(tur, turtle, blk, listenerName, () => {
                 for (const synth of synthList) {
                     tur.singer.synthVolume[synth].pop();
                     Singer.setSynthVolume(
@@ -202,9 +224,7 @@ function setupVolumeActions(activity) {
                 if (tur.singer.justCounting.length === 0) {
                     activity.logo.notation.notationEndArticulation(turtle);
                 }
-            };
-
-            activity.logo.setTurtleListener(turtle, listenerName, __listener);
+            });
         }
 
         /**
