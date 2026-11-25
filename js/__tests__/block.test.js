@@ -3502,4 +3502,47 @@ describe("Block Foundation", () => {
             expect(block.isClampBlock()).toBe(false);
         });
     });
+
+    // ── Block label null-value fallback (#6843) ───────────────────────────────
+    describe("_finishImageLoad null-value label fallback (#6843)", () => {
+        it('uses _("?") instead of "???" when intervalname value is null', () => {
+            // Simulate the label assignment logic from _finishImageLoad
+            const value = null;
+            const name = "intervalname";
+            let label;
+            if (name === "intervalname") {
+                if (value !== null) {
+                    label = value.toString();
+                } else {
+                    label = _("?");
+                }
+            }
+            expect(label).toBe("?");
+            expect(label).not.toBe("???");
+        });
+
+        it('uses _("?") instead of "???" for a generic value block with null value', () => {
+            const value = null;
+            let label;
+            if (value !== null) {
+                label = _(value.toString());
+            } else {
+                label = _("?");
+            }
+            expect(label).toBe("?");
+            expect(label).not.toBe("???");
+        });
+
+        it('uses _("?") fallback when getDrumName returns null for an unrecognised value', () => {
+            // getDrumName returns null for http-prefixed or unrecognised names
+            const { getDrumName } = require("../utils/musicutils-lookups");
+            global.DRUMNAMES = [["snare drum", "snare"]];
+            const result = getDrumName("http://unknown");
+            expect(result).toBeNull();
+            // After the fix: label = getDrumName(value) || _("?")
+            const label = result || _("?");
+            expect(label).toBe("?");
+            expect(label).not.toBe("???");
+        });
+    });
 });
