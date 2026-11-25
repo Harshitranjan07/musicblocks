@@ -1023,6 +1023,117 @@ describe("Test 13: Dynamic markings", () => {
 
         expect(synthVolumes(blocks)).toEqual([80]);
     });
+
+    it("imports note-attached dynamics from <notations><dynamics> before each note", async () => {
+        const noteWithDynamic = (step, octave, marking) =>
+            `<note><pitch><step>${step}</step><octave>${octave}</octave></pitch>` +
+            `<duration>8</duration><type>quarter</type>` +
+            `<notations><dynamics><${marking}/></dynamics></notations></note>`;
+        const { blocks } = await parseAndCapture(
+            scorePartwise(noteWithDynamic("C", 4, "p") + noteWithDynamic("D", 4, "f"))
+        );
+
+        expect(synthVolumes(blocks)).toEqual([35, 80]);
+        const volumeBlocks = blocks.filter(block => blockName(block) === "setsynthvolume");
+        const newnotes = blocks.filter(block => blockName(block) === "newnote");
+        expect(volumeBlocks[0][4][3]).toBe(newnotes[0][0]);
+        expect(volumeBlocks[1][4][3]).toBe(newnotes[1][0]);
+        expect(findUnreciprocatedConnections(blocks)).toEqual([]);
+        expect(findPositionMismatches(blocks)).toEqual([]);
+    });
+
+    it.each([
+        ["pp", 20],
+        ["p", 35],
+        ["mp", 50],
+        ["mf", 65],
+        ["f", 80],
+        ["ff", 100]
+    ])("maps note-attached %s to synth volume %i", async (marking, volume) => {
+        const noteXml =
+            `<note><pitch><step>C</step><octave>4</octave></pitch>` +
+            `<duration>8</duration><type>quarter</type>` +
+            `<notations><dynamics><${marking}/></dynamics></notations></note>`;
+        const { blocks } = await parseAndCapture(scorePartwise(noteXml));
+
+        expect(synthVolumes(blocks)).toEqual([volume]);
+    });
+
+    it("ignores unsupported note-attached dynamics without crashing", async () => {
+        const noteXml =
+            "<note><pitch><step>C</step><octave>4</octave></pitch>" +
+            "<duration>8</duration><type>quarter</type>" +
+            "<notations><dynamics><sfz/></dynamics></notations></note>";
+        const { blocks } = await parseAndCapture(scorePartwise(noteXml));
+
+        expect(synthVolumes(blocks)).toEqual([]);
+        expect(pitches(blocks)).toEqual([{ name: "C", octave: 4 }]);
+        expect(findUnreciprocatedConnections(blocks)).toEqual([]);
+    });
+
+    it("preserves tied note connections when a note carries <notations><dynamics>", async () => {
+        const tieStartWithDynamic =
+            "<note><pitch><step>C</step><octave>4</octave></pitch>" +
+            "<duration>8</duration><type>quarter</type>" +
+            '<tie type="start"/>' +
+            "<notations><dynamics><p/></dynamics></notations></note>";
+        const tieStop =
+            "<note><pitch><step>C</step><octave>4</octave></pitch>" +
+            "<duration>8</duration><type>quarter</type>" +
+            '<tie type="stop"/></note>';
+        const { blocks } = await parseAndCapture(scorePartwise(tieStartWithDynamic + tieStop));
+
+        expect(noteValues(blocks)).toEqual([[1, 2]]);
+        expect(pitches(blocks)).toEqual([{ name: "C", octave: 4 }]);
+        expect(synthVolumes(blocks)).toEqual([35]);
+        expect(findUnreciprocatedConnections(blocks)).toEqual([]);
+        expect(findPositionMismatches(blocks)).toEqual([]);
+    });
+
+    it("attaches note-attached dynamic to the second note when an open tie is flushed", async () => {
+        const openTie =
+            "<note><pitch><step>C</step><octave>4</octave></pitch>" +
+            "<duration>8</duration><type>quarter</type>" +
+            '<tie type="start"/></note>';
+        const nextNoteWithDynamic =
+            "<note><pitch><step>D</step><octave>4</octave></pitch>" +
+            "<duration>8</duration><type>quarter</type>" +
+            "<notations><dynamics><f/></dynamics></notations></note>";
+        const { blocks } = await parseAndCapture(scorePartwise(openTie + nextNoteWithDynamic));
+
+        const volumeBlock = blocks.find(block => blockName(block) === "setsynthvolume");
+        const newnotes = blocks.filter(block => blockName(block) === "newnote");
+        expect(synthVolumes(blocks)).toEqual([80]);
+        expect(volumeBlock[4][0]).toBe(newnotes[0][4][3]);
+        expect(volumeBlock[4][3]).toBe(newnotes[1][0]);
+        expect(findUnreciprocatedConnections(blocks)).toEqual([]);
+        expect(findPositionMismatches(blocks)).toEqual([]);
+    });
+
+    it("keeps note-attached dynamics in their own imported voice in multi-part scores", async () => {
+        const part1Note =
+            "<note><pitch><step>C</step><octave>4</octave></pitch>" +
+            "<duration>8</duration><type>quarter</type>" +
+            "<notations><dynamics><p/></dynamics></notations></note>";
+        const part2Note =
+            "<note><pitch><step>E</step><octave>3</octave></pitch>" +
+            "<duration>8</duration><type>quarter</type>" +
+            "<notations><dynamics><f/></dynamics></notations></note>";
+        const twoPartXml =
+            "<score-partwise>" +
+            '<part-list><score-part id="P1"/><score-part id="P2"/></part-list>' +
+            `<part id="P1"><measure number="1"><attributes><divisions>8</divisions></attributes>${part1Note}</measure></part>` +
+            `<part id="P2"><measure number="1"><attributes><divisions>8</divisions></attributes>${part2Note}</measure></part>` +
+            "</score-partwise>";
+        const { blocks } = await parseAndCapture(twoPartXml);
+
+        const settimbres = blocks.filter(block => blockName(block) === "settimbre");
+        const volumeBlocks = blocks.filter(block => blockName(block) === "setsynthvolume");
+        expect(synthVolumes(blocks)).toEqual([35, 80]);
+        expect(volumeBlocks.map(block => block[4][0])).toEqual(settimbres.map(block => block[0]));
+        expect(findUnreciprocatedConnections(blocks)).toEqual([]);
+        expect(findPositionMismatches(blocks)).toEqual([]);
+    });
 });
 
 describe("Test 14: Multi-part scores", () => {

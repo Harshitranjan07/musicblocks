@@ -546,6 +546,23 @@ const _MXML_MODE_NAME = {
 const _MXML_ASCII_ACCIDENTAL_SUFFIX = { "#": "♯", "b": "♭", "": "" };
 
 /**
+ * Returns the Music Blocks volume for the first supported dynamic marking
+ * inside a MusicXML <dynamics> element, or null if none is supported.
+ * @param {Element|null} dynamicsEl - a MusicXML <dynamics> element
+ * @returns {number|null}
+ */
+function _dynamicsElementVolume(dynamicsEl) {
+    if (dynamicsEl === null) return null;
+
+    for (const marking of dynamicsEl.children) {
+        const volume = _MXML_DYNAMIC_VOLUMES[marking.tagName];
+        if (volume !== undefined) return volume;
+    }
+
+    return null;
+}
+
+/**
  * Returns the Music Blocks volume for a supported dynamic marking in a
  * MusicXML <direction>, or null when there is no supported marking.
  * @param {Element} directionEl - a MusicXML <direction> element
@@ -556,15 +573,22 @@ function _dynamicVolume(directionEl) {
     // that is supported, skip it rather than attaching it to the next note.
     if (directionEl.querySelector(":scope > offset") !== null) return null;
 
-    const dynamicsEl = directionEl.querySelector(":scope > direction-type > dynamics");
-    if (dynamicsEl === null) return null;
+    return _dynamicsElementVolume(directionEl.querySelector(":scope > direction-type > dynamics"));
+}
 
-    for (const marking of dynamicsEl.children) {
-        const volume = _MXML_DYNAMIC_VOLUMES[marking.tagName];
-        if (volume !== undefined) return volume;
+/**
+ * Returns Music Blocks volumes for any supported dynamic markings attached
+ * directly to a MusicXML <note> via <notations><dynamics>.
+ * @param {Element} noteEl - a MusicXML <note> element
+ * @returns {number[]}
+ */
+function _noteDynamicVolumes(noteEl) {
+    const volumes = [];
+    for (const dynamicsEl of noteEl.querySelectorAll(":scope > notations > dynamics")) {
+        const volume = _dynamicsElementVolume(dynamicsEl);
+        if (volume !== null) volumes.push(volume);
     }
-
-    return null;
+    return volumes;
 }
 
 /**
@@ -1444,10 +1468,15 @@ function _processPart(
             // the accumulated tie first, then handling this note as its own
             // independent note/new-tie, keeps that content from being
             // silently folded into the open tie's duration.
+            const noteVolumes = _noteDynamicVolumes(child);
             const continuesTie =
                 tieDuration !== null && hasTieStop && _contentsEqual(content, tieContent);
 
             if (tieDuration !== null && !continuesTie) flushTie();
+
+            if (noteVolumes.length > 0) {
+                pendingVolumes.push(...noteVolumes);
+            }
 
             if (continuesTie) {
                 tieLyrics = _mergeLyrics(tieLyrics, lyrics);
