@@ -773,6 +773,24 @@ class ToolbarUI {
                 updateThemeIcon(theme);
                 updateThemeOptions();
                 $j(icon).dropdown("close");
+
+                // Materialize dropdown("close") uses fadeOut(225ms), which keeps
+                // display: block during the animation and causes #themedropdown to
+                // overlap the theme-switch notification banner (#10563).
+                const dropdownEl = docById("themedropdown");
+                if (dropdownEl) {
+                    const $dropdown = $j(dropdownEl);
+                    if ($dropdown && typeof $dropdown.stop === "function") {
+                        $dropdown.stop(true, true);
+                    }
+                    dropdownEl.style.display = "none";
+                    if (dropdownEl.classList) {
+                        dropdownEl.classList.remove("active");
+                    }
+                }
+                if (icon.classList) {
+                    icon.classList.remove("active");
+                }
             };
         });
 

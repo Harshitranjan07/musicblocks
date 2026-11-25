@@ -449,4 +449,28 @@ describe("play-only-mode.css colour tokens", () => {
         expect(closeRule).toBeDefined();
         expect(closeRule.body).toContain("display: flex");
     });
+
+    it("keeps #themedropdown hidden by default and high contrast in themes.css (#10563)", () => {
+        const themesRules = parseRules(themesCss.replace(/\/\*[\s\S]*?\*\//g, ""));
+        const baseRule = themesRules.find(r => r.selector.trim() === "#themedropdown");
+        expect(baseRule).toBeDefined();
+        expect(declaration(baseRule.body, "display")).toBeNull();
+
+        const tokens = THEMES.highcontrast;
+        const itemRule = themesRules.find(
+            r => r.selector.trim() === ".highcontrast #themedropdown li a"
+        );
+        expect(itemRule).toBeDefined();
+        const itemBg = resolveColor(declaration(itemRule.body, "background-color"), tokens);
+        const itemFg = resolveColor(declaration(itemRule.body, "color"), tokens);
+        expect(contrastRatio(itemFg, itemBg)).toBeGreaterThanOrEqual(7);
+
+        const hoverRule = themesRules.find(r =>
+            r.selector.includes("body.highcontrast #themedropdown.dropdown-content li > a:hover")
+        );
+        expect(hoverRule).toBeDefined();
+        const hoverBg = resolveColor(declaration(hoverRule.body, "background-color"), tokens);
+        const hoverFg = resolveColor(declaration(hoverRule.body, "color"), tokens);
+        expect(contrastRatio(hoverFg, hoverBg)).toBeGreaterThanOrEqual(7);
+    });
 });

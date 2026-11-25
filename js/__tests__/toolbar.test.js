@@ -470,6 +470,66 @@ describe("Toolbar Class", () => {
         expect(dropdown).toHaveBeenCalledWith("close");
     });
 
+    test("renderThemeSelectIcon synchronously hides #themedropdown and clears active classes on selection (#10563)", () => {
+        const stop = jest.fn();
+        const themeSelectIcon = {
+            onclick: null,
+            textContent: "",
+            childNodes: [],
+            appendChild: jest.fn(),
+            classList: {
+                remove: jest.fn()
+            }
+        };
+        const themedropdown = {
+            style: { display: "block" },
+            classList: {
+                remove: jest.fn()
+            }
+        };
+        const themes = ["light", "dark", "highcontrast"];
+        const options = Object.fromEntries(
+            themes.map(theme => [
+                theme,
+                {
+                    childNodes: [{ cloneNode: jest.fn(() => `${theme}-icon`) }],
+                    onclick: null,
+                    parentElement: { style: {} }
+                }
+            ])
+        );
+        const themeBox = {
+            _theme: "light",
+            light_onclick: jest.fn(),
+            dark_onclick: jest.fn(),
+            highcontrast_onclick: jest.fn(() => {
+                themeBox._theme = "highcontrast";
+            })
+        };
+        const dropdown = jest.fn();
+        global.jQuery.mockImplementation(() => ({
+            dropdown,
+            stop,
+            on: jest.fn(),
+            tooltip: jest.fn(),
+            trigger: jest.fn()
+        }));
+        global.docById.mockImplementation(id => {
+            if (id === "themeSelectIcon") return themeSelectIcon;
+            if (id === "themedropdown") return themedropdown;
+            return options[id];
+        });
+
+        toolbar.renderThemeSelectIcon(themeBox, themes);
+        options.highcontrast.onclick();
+
+        expect(dropdown).toHaveBeenCalledWith("close");
+        expect(stop).toHaveBeenCalledWith(true, true);
+        expect(themedropdown.style.display).toBe("none");
+        expect(themedropdown.classList.remove).toHaveBeenCalledWith("active");
+        expect(themeSelectIcon.classList.remove).toHaveBeenCalledWith("active");
+    });
+
     test("renderWrapIcon toggles WRAP and updates tooltip", () => {
         const mockActivity = {
             helpfulWheelItems: [
