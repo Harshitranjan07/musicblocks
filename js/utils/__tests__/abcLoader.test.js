@@ -80,6 +80,27 @@ describe("ensureABCJS", () => {
         appendChildSpy.mockRestore();
     });
 
+    it("should remove failed script tag so a later call can retry loading", async () => {
+        const firstPromise = ensureABCJS();
+        const firstScript = document.querySelector('script[src="lib/abc.min.js"]');
+        expect(firstScript).not.toBeNull();
+
+        const loadError = new Event("error");
+        firstScript.dispatchEvent(loadError);
+
+        await expect(firstPromise).rejects.toBe(loadError);
+        expect(document.querySelector('script[src="lib/abc.min.js"]')).toBeNull();
+
+        const retryPromise = ensureABCJS();
+        const retryScript = document.querySelector('script[src="lib/abc.min.js"]');
+        expect(retryScript).not.toBeNull();
+        expect(retryScript).not.toBe(firstScript);
+
+        retryScript.onload();
+        await expect(retryPromise).resolves.toBeUndefined();
+        expect(retryScript.getAttribute("data-loaded")).toBe("true");
+    });
+
     it("should reuse an existing script tag that has already loaded", async () => {
         // Pre-inject a loaded script into the head
         const existingScript = document.createElement("script");
@@ -111,8 +132,9 @@ describe("ensureABCJS", () => {
         // Should not append another script
         expect(appendChildSpy).not.toHaveBeenCalled();
 
-        // Should attach an event listener to wait for loading
+        // Should attach load and error listeners to wait for settling
         expect(addEventListenerSpy).toHaveBeenCalledWith("load", expect.any(Function));
+        expect(addEventListenerSpy).toHaveBeenCalledWith("error", expect.any(Function));
 
         // Get the resolved callback function and call it manually
         const onloadCallback = addEventListenerSpy.mock.calls[0][1];
@@ -122,6 +144,21 @@ describe("ensureABCJS", () => {
 
         appendChildSpy.mockRestore();
         addEventListenerSpy.mockRestore();
+    });
+
+    it("should reject waiting callers when an existing script fails to load", async () => {
+        const firstPromise = ensureABCJS();
+        const secondPromise = ensureABCJS();
+
+        const script = document.querySelector('script[src="lib/abc.min.js"]');
+        expect(script).not.toBeNull();
+
+        const loadError = new Event("error");
+        script.dispatchEvent(loadError);
+
+        await expect(firstPromise).rejects.toBe(loadError);
+        await expect(secondPromise).rejects.toBe(loadError);
+        expect(document.querySelector('script[src="lib/abc.min.js"]')).toBeNull();
     });
 
     describe("when RequireJS is present", () => {
