@@ -178,6 +178,27 @@ describe("rubrics.js test suite", () => {
             expect(dropped.every(score => score === 0)).toBe(true);
         });
 
+        it("skips active clamp blocks (newnote, newstaccato, newslur, tuplet3, stuplet, invert1) when their child slot is empty (#8456)", () => {
+            const emptyActiveClamps = [
+                // 1-arg clamps chained after another block (so connections[0] != null and last != null)
+                { name: "newnote", connections: [1, 2, null, 3] },
+                { name: "newstaccato", connections: [1, 2, null, 3] },
+                { name: "newslur", connections: [1, 2, null, 3] },
+                { name: "tuplet4", connections: [1, 2, null, 3] },
+                { name: "setratio", connections: [1, 2, null, 3] },
+                // 2-arg clamps: child flow at slot 3
+                { name: "tuplet3", connections: [1, 2, 3, null, 4] },
+                { name: "stuplet", connections: [1, 2, 3, null, 4] },
+                { name: "newswing2", connections: [1, 2, 3, null, 4] },
+                { name: "setbpm2", connections: [1, 2, 3, null, 4] },
+                // 3-arg clamp: child flow at slot 4
+                { name: "invert1", connections: [1, 2, 3, 4, null, 5] }
+            ];
+
+            const result = analyzeProject({ blocks: { blockList: emptyActiveClamps } });
+            expect(result.every(score => score === 0)).toBe(true);
+        });
+
         it("logs a debug line for a retained block that is absent from the catalog", () => {
             const debugSpy = jest.spyOn(console, "debug").mockImplementation(() => {});
 

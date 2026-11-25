@@ -5113,7 +5113,6 @@ class Blocks {
                             case "rhythm2":
                             case "newswing2":
                             case "vibrato":
-                            case "neighbor":
                             case "neighbor2":
                                 if (this.blockList[cblk].connections[2] === dblk) {
                                     return true;
@@ -5187,7 +5186,6 @@ class Blocks {
                     case "rhythm2":
                     case "newswing2":
                     case "vibrato":
-                    case "neighbor":
                     case "neighbor2":
                         if (this.blockList[cblk].connections[2] === dblk) {
                             return denominatorValue();
