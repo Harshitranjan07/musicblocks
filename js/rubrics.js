@@ -565,14 +565,21 @@ const analyzeProject = activity => {
                 }
                 break;
             case "note":
+            case "newnote":
             case "multiplybeatfactor":
             case "duplicatenotes":
             case "skipnotes":
             case "setbpm":
             case "settransposition":
+            case "setratio":
             case "staccato":
+            case "newstaccato":
             case "slur":
+            case "newslur":
             case "swing":
+            case "newswing":
+            case "neighbor2":
+            case "tuplet4":
             case "crescendo":
             case "setnotevolume2":
             case "vibrato":
@@ -589,6 +596,10 @@ const analyzeProject = activity => {
                 }
                 break;
             case "tuplet2":
+            case "tuplet3":
+            case "stuplet":
+            case "newswing2":
+            case "setbpm2":
                 if (
                     activity.blocks.blockList[blk].connections[3] === null ||
                     activity.blocks.blockList[blk].connections[3] === undefined
@@ -597,6 +608,7 @@ const analyzeProject = activity => {
                 }
                 break;
             case "invert":
+            case "invert1":
                 if (
                     activity.blocks.blockList[blk].connections[4] === null ||
                     activity.blocks.blockList[blk].connections[4] === undefined
