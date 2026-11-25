@@ -385,6 +385,8 @@ class Logo {
         this._EXPORT_YIELD_AFTER_SYNC_RUNS = 100; // Sync yield threshold during exports.
         this._MAX_ITERATIONS = 1000000;
         this._iterationBudget = this._MAX_ITERATIONS + 1;
+        this._lastIterationBudgetSeed = this._iterationBudget;
+        this._turtleIterationBudgets = {};
 
         // When running in step-by-step mode, the next command to run
         // is queued here.
@@ -1566,6 +1568,7 @@ class Logo {
         this.switchCases[turtle] = {};
         this.switchBlocks[turtle] = [];
         this.returns[turtle] = [];
+        this._turtleIterationBudgets[turtle] = this._MAX_ITERATIONS + 1;
 
         this.notation.notationStaging[turtle] = [];
         this.notation.notationDrumStaging[turtle] = [];
@@ -1872,6 +1875,8 @@ class Logo {
 
         this._syncCounter = 0;
         this._iterationBudget = this._MAX_ITERATIONS + 1;
+        this._lastIterationBudgetSeed = this._iterationBudget;
+        this._turtleIterationBudgets = {};
 
         this.blocks.unhighlightAll();
         this.blocks.bringToTop(); // Draw under the blocks.
@@ -2334,15 +2339,44 @@ class Logo {
 
             this.receivedArg = receivedArg;
 
-            if (--logo._iterationBudget <= 0) {
+            if (logo._iterationBudget !== logo._lastIterationBudgetSeed) {
+                logo._lastIterationBudgetSeed = logo._iterationBudget;
+                logo._turtleIterationBudgets[turtle] = logo._iterationBudget;
+            } else if (!(turtle in logo._turtleIterationBudgets)) {
+                logo._turtleIterationBudgets[turtle] = logo._MAX_ITERATIONS + 1;
+            }
+
+            const turForBudget = logo.turtles?.ithTurtle?.(turtle);
+            if (--logo._turtleIterationBudgets[turtle] <= 0) {
+                const turtleLabel =
+                    turForBudget && turForBudget.name
+                        ? turForBudget.name
+                        : `${_("Turtle")} ${turtle}`;
                 logo.deps.errorHandler(
-                    _("Infinite loop detected. Execution stopped to prevent browser freeze."),
+                    `${_("Infinite loop detected. Execution stopped to prevent browser freeze.")} (${turtleLabel})`,
                     blk
                 );
-                logo.stopTurtle = true;
-                logo._alreadyRunning = false;
-                logo._syncCounter = 0;
-                logo._iterationBudget = logo._MAX_ITERATIONS + 1;
+                if (turForBudget) {
+                    turForBudget.queue = [];
+                    turForBudget.running = false;
+                    if (Array.isArray(turForBudget.parentFlowQueue)) {
+                        turForBudget.parentFlowQueue = [];
+                    }
+                }
+                delete logo.stepQueue[turtle];
+                logo._turtleIterationBudgets[turtle] = logo._MAX_ITERATIONS + 1;
+                const turtleList = logo.turtles?.turtleList || [];
+                const otherRunning = turtleList.some(
+                    (other, idx) =>
+                        String(idx) !== String(turtle) && other && other.running && !other.inTrash
+                );
+                if (!otherRunning) {
+                    logo.stopTurtle = true;
+                    logo._alreadyRunning = false;
+                    logo._syncCounter = 0;
+                    logo._iterationBudget = logo._MAX_ITERATIONS + 1;
+                    logo._lastIterationBudgetSeed = logo._iterationBudget;
+                }
                 if (profilingEnabled) {
                     Logo._recordBlockTiming(logo, blk, profilingStart);
                     performanceTracker.exitBlock();
