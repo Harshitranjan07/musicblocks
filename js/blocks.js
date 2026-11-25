@@ -2297,8 +2297,9 @@ class Blocks {
                 if (onScreen && block.connections[0] === null) {
                     if (block.offScreen(this.boundary)) {
                         this.activity.setHomeContainers(true);
-                        /** Just highlight the button. */
-                        /** this.boundary.show(); */
+                        if (this.boundary && typeof this.boundary.show === "function") {
+                            this.boundary.show();
+                        }
                         onScreen = false;
                     }
                 }
@@ -2314,7 +2315,9 @@ class Blocks {
 
             if (onScreen) {
                 this.activity.setHomeContainers(false);
-                this.boundary.hide();
+                if (this.boundary && typeof this.boundary.hide === "function") {
+                    this.boundary.hide();
+                }
             }
 
             if (start > 0) {
