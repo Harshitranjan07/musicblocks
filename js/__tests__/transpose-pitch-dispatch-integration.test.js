@@ -160,11 +160,13 @@ Object.assign(global, {
     C8: musicUtils.C8,
     getCurrentEDO: musicUtils.getCurrentEDO,
     getModeLength: musicUtils.getModeLength,
+    noteToObj: musicUtils.noteToObj,
     getInterval: musicUtils.getInterval,
     getTemperament: musicUtils.getTemperament,
     getOctaveRatio: musicUtils.getOctaveRatio,
     isCustomTemperament: musicUtils.isCustomTemperament,
     isTrueEDO: musicUtils.isTrueEDO,
+    isNonEDO: musicUtils.isNonEDO,
     TEMPERAMENT: musicUtils.TEMPERAMENT
 });
 
@@ -432,5 +434,84 @@ describe("real newnote/settransposition/pitch blocks dispatch through Logo into 
         expect(Singer.processNote).toHaveBeenCalledTimes(1);
         expect(turtle.singer.transposition).toBe(0);
         expect(turtle.singer.transpositionValues).toEqual([]);
+    });
+
+    test("scalar step advances across consecutive notes inside a semi-tone transpose clamp without stalling (#10128)", () => {
+        // Real addScalarTransposition runs the full pitch + scalar step + transposition pipeline.
+        Singer.addScalarTransposition = realAddScalarTransposition;
+
+        const scheduledNotes = [];
+        Singer.processNote = jest.fn((_activity, noteValue, _isOsc, blk, t) => {
+            const tur = _activity.turtles.ithTurtle(t);
+            const noteStr = `${tur.singer.notePitches[blk][0]}${tur.singer.noteOctaves[blk][0]}`;
+            scheduledNotes.push(noteStr);
+            // Mirror real Singer.processNote updating lastNotePlayed after scheduling.
+            tur.singer.lastNotePlayed = [noteStr, 1 / noteValue];
+        });
+
+        // Build: settransposition(-2) {
+        //   newnote(1/4) { pitch("do", 4) }
+        //   newnote(1/4) { steppitch(2) }
+        //   newnote(1/4) { steppitch(2) }
+        //   newnote(1/4) { steppitch(2) }
+        // }
+        const clamp = makeRealBlock(
+            "settransposition",
+            [null, 1, null, 2],
+            protos.settransposition
+        );
+        const blocks = [clamp, makeValueBlock("number", -2), makeHidden(0)];
+
+        let lastHiddenId = null;
+        const addNote = buildInner => {
+            const noteId = blocks.length;
+            const hiddenId = noteId + 2;
+            const prev = lastHiddenId !== null ? lastHiddenId : 0;
+            const note = makeRealBlock(
+                "newnote",
+                [prev, noteId + 1, null, hiddenId],
+                protos.newnote
+            );
+            blocks.push(note);
+            blocks.push(makeValueBlock("number", 1 / 4));
+            blocks.push(makeHidden(noteId));
+            buildInner(noteId, note);
+            if (lastHiddenId === null) {
+                clamp.connections[2] = noteId;
+            } else {
+                blocks[lastHiddenId].connections[1] = noteId;
+            }
+            lastHiddenId = hiddenId;
+        };
+
+        addNote((noteId, note) => {
+            const pitchId = blocks.length;
+            note.connections[2] = pitchId;
+            blocks.push(
+                makeRealBlock("pitch", [noteId, pitchId + 1, pitchId + 2, null], protos.pitch)
+            );
+            blocks.push(makeValueBlock("solfege", "do"));
+            blocks.push(makeValueBlock("number", 4));
+        });
+
+        for (let i = 0; i < 3; i++) {
+            addNote((noteId, note) => {
+                const stepId = blocks.length;
+                note.connections[2] = stepId;
+                blocks.push(
+                    makeRealBlock("steppitch", [noteId, stepId + 1, null], protos.steppitch)
+                );
+                blocks.push(makeValueBlock("number", 2));
+            });
+        }
+
+        logo.blockList = blocks;
+        activity.blocks.blockList = blocks;
+
+        logo.runFromBlockNow(logo, 0, 0, 1, null);
+
+        // Untransposed C4 -> E4 -> G4 -> B4 under -2 semitones must yield A#3 -> D4 -> F4 -> A4.
+        expect(scheduledNotes).toEqual(["A♯3", "D4", "F4", "A4"]);
+        expect(turtle.singer.transposition).toBe(0);
     });
 });

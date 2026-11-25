@@ -262,6 +262,85 @@ describe("Tests for Singer.PitchActions setup", () => {
             expect(Singer.addScalarTransposition).toHaveBeenCalledWith(activity.logo, 0, "G", 4, 1);
         });
 
+        test("undoes active semitone transposition before stepping so scalar step does not stall (#10128)", () => {
+            turtle.singer.inNoteBlock = ["note1"];
+            turtle.singer.keySignature = "C major";
+            turtle.singer.transposition = -2;
+            // Previous note C5 played under Semi-Tone Transpose = -2 -> Bb4
+            turtle.singer.lastNotePlayed = ["B♭4", 8];
+
+            Singer.addScalarTransposition.mockImplementation((_logo, _t, p, oct, steps) => {
+                // Simulate real C major scalar step +2 from untransposed C5 -> E5
+                return steps === 2 && p === "C" && oct === 5 ? ["E", 5] : [p, oct];
+            });
+            const processSpy = jest.spyOn(Singer, "processPitch");
+
+            Singer.PitchActions.stepPitch(2, 0, blkId);
+
+            // Must have undone -2 semitones back to C5 before stepping +2 -> E5
+            expect(Singer.addScalarTransposition).toHaveBeenCalledWith(activity.logo, 0, "C", 5, 2);
+            expect(processSpy).toHaveBeenCalledWith(activity, "E", 5, 0, 0, blkId);
+        });
+
+        test("undoes positive semitone transposition before stepping downward (#10128)", () => {
+            turtle.singer.inNoteBlock = ["note1"];
+            turtle.singer.keySignature = "C major";
+            turtle.singer.transposition = 2;
+            // Previous note E5 played under Semi-Tone Transpose = +2 -> F#5
+            turtle.singer.lastNotePlayed = ["F♯5", 8];
+
+            Singer.addScalarTransposition.mockImplementation((_logo, _t, p, oct, steps) => {
+                return steps === -2 && p === "E" && oct === 5 ? ["C", 5] : [p, oct];
+            });
+            const processSpy = jest.spyOn(Singer, "processPitch");
+
+            Singer.PitchActions.stepPitch(-2, 0, blkId);
+
+            expect(Singer.addScalarTransposition).toHaveBeenCalledWith(
+                activity.logo,
+                0,
+                "E",
+                5,
+                -2
+            );
+            expect(processSpy).toHaveBeenCalledWith(activity, "C", 5, 0, 0, blkId);
+        });
+
+        test("undoes scalarTransposition before stepping so Scalar Transpose is not applied repeatedly", () => {
+            turtle.singer.inNoteBlock = ["note1"];
+            turtle.singer.keySignature = "C major";
+            turtle.singer.scalarTransposition = 1;
+            // Previous note C5 shifted by scalarTransposition +1 -> D5
+            turtle.singer.lastNotePlayed = ["D5", 8];
+
+            Singer.addScalarTransposition.mockImplementation((_logo, _t, p, oct, steps) => {
+                if (steps === -1 && p === "D" && oct === 5) return ["C", 5];
+                if (steps === 2 && p === "C" && oct === 5) return ["E", 5];
+                return [p, oct];
+            });
+            const processSpy = jest.spyOn(Singer, "processPitch");
+
+            Singer.PitchActions.stepPitch(2, 0, blkId);
+
+            expect(Singer.addScalarTransposition).toHaveBeenNthCalledWith(
+                1,
+                activity.logo,
+                0,
+                "D",
+                5,
+                -1
+            );
+            expect(Singer.addScalarTransposition).toHaveBeenNthCalledWith(
+                2,
+                activity.logo,
+                0,
+                "C",
+                5,
+                2
+            );
+            expect(processSpy).toHaveBeenCalledWith(activity, "E", 5, 0, 0, blkId);
+        });
+
         test("justCounting guard requires BOTH justCounting non-empty AND lastNotePlayed null", () => {
             // justCounting non-empty but lastNotePlayed already set → guard must stay false.
             turtle.singer.justCounting = [1];
