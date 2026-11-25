@@ -1414,33 +1414,39 @@ class Logo {
      * @returns {void}
      */
     doBreak(turtle) {
-        // Look for a parent loopBlock in queue and set its count to 1
+        // Look for a parent loopBlock in queue and flush it along with any
+        // child blocks scheduled inside the broken loop iteration.
         let parentLoopBlock = null;
         let loopBlkIdx = -1;
+        let flushFromIdx = -1;
+        const loopNames = ["forever", "repeat", "while", "until"];
 
         const queueLength = turtle.queue.length;
         for (let i = queueLength - 1; i > -1; i--) {
-            if (
-                ["forever", "repeat", "while", "until"].includes(
-                    this.blockList[turtle.queue[i].blk].name
-                )
-            ) {
+            const entry = turtle.queue[i];
+            const entryName = this.blockList[entry.blk]?.name;
+            const parentName = this.blockList[entry.parentBlk]?.name;
+
+            if (loopNames.includes(entryName)) {
                 // while or until
-                loopBlkIdx = turtle.queue[i].blk;
+                loopBlkIdx = entry.blk;
                 parentLoopBlock = this.blockList[loopBlkIdx];
-                // Flush the parent from the queue
-                turtle.queue.splice(i, 1);
+                flushFromIdx = i;
                 break;
-            } else if (
-                ["forever", "repeat", "while", "until"].includes(
-                    this.blockList[turtle.queue[i].parentBlk].name
-                )
-            ) {
+            } else if (loopNames.includes(parentName)) {
                 // repeat or forever
-                loopBlkIdx = turtle.queue[i].parentBlk;
+                loopBlkIdx = entry.parentBlk;
                 parentLoopBlock = this.blockList[loopBlkIdx];
-                // Flush the parent from the queue
-                turtle.queue.splice(i, 1);
+                // On a final iteration (count === 1), the child-flow entry was
+                // already popped, so entry may be the post-loop outflow queued
+                // at parentLoopBlock's last connection; keep that outflow intact.
+                const connections = parentLoopBlock.connections || [];
+                const expectedMinLen = parentLoopBlock.name === "repeat" ? 4 : 3;
+                const isPostLoopOutflow =
+                    connections.length >= expectedMinLen &&
+                    entry.blk === this.deps.utils.last(connections) &&
+                    (i === 0 || turtle.queue[i - 1].parentBlk !== loopBlkIdx);
+                flushFromIdx = isPostLoopOutflow ? i + 1 : i;
                 break;
             }
         }
@@ -1450,6 +1456,20 @@ class Logo {
             // Flush the child flow
             turtle.queue.pop();
             return;
+        }
+
+        while (turtle.queue.length > flushFromIdx) {
+            const popped = turtle.queue.pop();
+            if (popped && turtle.endOfClampSignals && popped.blk in turtle.endOfClampSignals) {
+                while (turtle.endOfClampSignals[popped.blk].length > 0) {
+                    const signal = turtle.endOfClampSignals[popped.blk].pop();
+                    // eslint-disable-next-line eqeqeq
+                    if (signal != null && this.stage) {
+                        this.stage.dispatchEvent(signal);
+                    }
+                }
+            }
+            Queue.recycle(popped);
         }
 
         // For while and until, we need to add any childflow from the parent to the queue
