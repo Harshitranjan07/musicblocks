@@ -181,6 +181,12 @@ describe("PlanetInterface", () => {
         expect(window.Converter).toBe("mockConverter");
     });
 
+    test("onConverterLoad safely sets window.Converter to undefined when planet is null", () => {
+        planetInterface.planet = null;
+        expect(() => planetInterface.onConverterLoad()).not.toThrow();
+        expect(window.Converter).toBeUndefined();
+    });
+
     test("getCurrentProjectName returns name from ProjectStorage", () => {
         planetInterface.planet = {
             ProjectStorage: { getCurrentProjectName: jest.fn(() => "ProjectX") }
