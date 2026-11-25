@@ -883,5 +883,80 @@ describe("ChordBuilderWidget", () => {
             expect(mockActivity.logo.chordBuilderWidget).toBeNull();
             expect(mockAudio.stop).toHaveBeenCalled();
         });
+
+        it("parses double flats and double sharps in _noteToSemitone", () => {
+            expect(widget._noteToSemitone("B𝄫")).toBe(9);
+            expect(widget._noteToSemitone("Bbb")).toBe(9);
+            expect(widget._noteToSemitone("E𝄫")).toBe(2);
+            expect(widget._noteToSemitone("A𝄫")).toBe(7);
+            expect(widget._noteToSemitone("C𝄫")).toBe(10);
+            expect(widget._noteToSemitone("F𝄪")).toBe(7);
+            expect(widget._noteToSemitone("Fx")).toBe(7);
+            expect(widget._noteToSemitone("F##")).toBe(7);
+            expect(widget._noteToSemitone("B𝄪")).toBe(1);
+            expect(widget._noteToSemitone("")).toBe(0);
+            expect(widget._noteToSemitone("H#")).toBe(0);
+            expect(widget._noteToSemitone("C?")).toBe(0);
+        });
+
+        it("computes correct chord qualities and exports correct chord type for double-accidental scales", () => {
+            const origBuildScale = global.buildScale;
+            try {
+                // Gb minor (Aeolian): Gb Ab Bbb Cb Db Ebb Fb
+                global.buildScale = jest.fn(() => [["G♭", "A♭", "B𝄫", "C♭", "D♭", "E𝄫", "F♭"]]);
+                const gbMinor = widget._buildDiatonicChords("G♭", "minor");
+                expect(gbMinor[0]).toMatchObject({
+                    roman: "i",
+                    name: "G♭m",
+                    quality: "minor",
+                    notes: ["G♭", "B𝄫", "D♭"]
+                });
+                expect(gbMinor[1]).toMatchObject({
+                    roman: "ii°",
+                    name: "A♭°",
+                    quality: "diminished",
+                    notes: ["A♭", "C♭", "E𝄫"]
+                });
+
+                // Db locrian: Db Ebb Fb Gb Abb Bbb Cb
+                global.buildScale = jest.fn(() => [["D♭", "E𝄫", "F♭", "G♭", "A𝄫", "B𝄫", "C♭"]]);
+                const dbLocrian = widget._buildDiatonicChords("D♭", "locrian");
+                expect(dbLocrian[0]).toMatchObject({
+                    roman: "i°",
+                    name: "D♭°",
+                    quality: "diminished",
+                    notes: ["D♭", "F♭", "A𝄫"]
+                });
+
+                // C# lydian: C# D# E# F## G# A# B#
+                global.buildScale = jest.fn(() => [["C♯", "D♯", "E♯", "F𝄪", "G♯", "A♯", "B♯"]]);
+                const cSharpLydian = widget._buildDiatonicChords("C♯", "lydian");
+                expect(cSharpLydian[3]).toMatchObject({
+                    roman: "iv°",
+                    name: "F𝄪°",
+                    quality: "diminished",
+                    notes: ["F𝄪", "A♯", "C♯"]
+                });
+                expect(cSharpLydian[6]).toMatchObject({
+                    roman: "vii",
+                    name: "B♯m",
+                    quality: "minor",
+                    notes: ["B♯", "D♯", "F𝄪"]
+                });
+
+                // Save Gb minor degree 1 and verify exported chord block type is "minor"
+                widget.progression = [gbMinor[0]];
+                widget.saveToBlocks();
+                expect(mockBlocks.loadNewBlocks).toHaveBeenCalledTimes(1);
+                const exported = mockBlocks.loadNewBlocks.mock.calls[0][0];
+                const chordNameBlocks = exported.filter(
+                    b => Array.isArray(b[1]) && b[1][0] === "chordname"
+                );
+                expect(chordNameBlocks).toHaveLength(1);
+                expect(chordNameBlocks[0][1][1].value).toBe("minor");
+            } finally {
+                global.buildScale = origBuildScale;
+            }
+        });
     });
 });
